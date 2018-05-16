@@ -417,7 +417,7 @@ class OvirtHostedEnginePage(SeleniumTest):
         self.clean_hostengine_env()
         self.refresh()
         self.switch_to_frame(self.OVIRT_HOSTEDENGINE_FRAME_NAME)
-        self.node_zero_default_deploy()
+        self.node_zero_default_deploy_process()
 
     def add_additional_host_to_cluster_process(self):
         self.add_additional_host_to_cluster(
