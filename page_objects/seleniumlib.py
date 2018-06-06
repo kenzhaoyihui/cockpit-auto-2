@@ -11,6 +11,8 @@ from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import ElementNotInteractableException
 from utils.machine import Machine
 
 
@@ -39,6 +41,9 @@ def locator(el_descriptor):
     if re.match(r'^//', el_descriptor):
         by = BY_MAP.get('XPATH')
         path = el_descriptor
+    elif re.match(r'^#', el_descriptor):
+        by = BY_MAP.get('ID')
+        path = el_descriptor.lstrip('#')
     else:
         el_format = el_descriptor.format(SEPERATOR)
         by = BY_MAP.get(el_format.split(SEPERATOR)[0].strip())
@@ -98,21 +103,21 @@ class SeleniumTest(Test):
         elif browser == 'firefox':
             capabilities = DesiredCapabilities.FIREFOX.copy()
             capabilities['platform'] = 'LINUX'
-        elif browser == 'explorer':
+        elif browser == 'ie':
             capabilities = DesiredCapabilities.INTERNETEXPLORER.copy()
 
         return capabilities
 
     def open_cockpit(self, host_string, browser=None):
         self.driver.get('http://%s:9090' % host_string)
-        if browser == 'explorer':
-            self.click("ID{}overridelink")
+        if browser == 'ie':
+            self.click("#overridelink")
 
     def login(self, username, passwd):
         # login page elements
-        login_user_text_input = "ID{}login-user-input"
-        login_pass_text_input = "ID{}login-password-input"
-        login_button = "ID{}login-button"
+        login_user_text_input = "#login-user-input"
+        login_pass_text_input = "#login-password-input"
+        login_button = "#login-button"
 
         self.input_text(login_user_text_input, username)
         self.input_text(login_pass_text_input, passwd)
@@ -120,8 +125,8 @@ class SeleniumTest(Test):
 
     def logout(self):
         # logout elements:
-        navbar_dropdown = "ID{}navbar-dropdown"
-        go_logout = "ID{}go-logout"
+        navbar_dropdown = "#navbar-dropdown"
+        go_logout = "#go-logout"
 
         self.switch_to_default_content()
         self.click(navbar_dropdown)
@@ -168,7 +173,7 @@ class SeleniumTest(Test):
         return element
 
     def switch_to_frame(self, frame_name, try_times=DEFAULT_TRY):
-        el_descriptor = "XPATH{}//iframe[contains(@name,'%s')]" % frame_name
+        el_descriptor = "//iframe[contains(@name,'%s')]" % frame_name
         self._wait(el_descriptor, cond=frame, try_times=try_times)
 
     def switch_to_default_content(self):
@@ -177,17 +182,30 @@ class SeleniumTest(Test):
     def click(self, el_descriptor, try_times=DEFAULT_TRY):
         element = self._wait(
             el_descriptor, cond=clickable, try_times=try_times)
-        element.click()
+        try:
+            element.click()
+        except (StaleElementReferenceException, ElementNotInteractableException):
+            element = self._wait(
+                el_descriptor, cond=clickable, try_times=try_times)
+            element.click()
 
     def click_text(self, text, try_times=DEFAULT_TRY):
-        el_descriptor = "XPATH{}//*[contains(text(), '%s')]" % text
+        el_descriptor = "//*[contains(text(), '%s')]" % text
         self.click(el_descriptor, try_times)
 
-    def hover_and_click(self, el_hover, el_click, try_times=DEFAULT_TRY):
+    def hover_and_click(self, el_hover, el_click=None, try_times=DEFAULT_TRY):
         hover_element = self._wait(
             el_hover, cond=visible, try_times=try_times)
-        ActionChains(self.driver).move_to_element(hover_element).perform()
-        self.click(el_click, try_times)
+        actions = ActionChains(self.driver)
+        actions.move_to_element(hover_element)
+        if not el_click:
+            # hover and click the same element
+            actions.click(hover_element)
+            actions.perform()
+        else:
+            # hover to one element, then click another element
+            actions.perform()
+            self.click(el_click, try_times)
 
     def input_text(self, el_descriptor, new_value, clear=True, try_times=DEFAULT_TRY):
         element = self._wait(el_descriptor, cond=visible,
@@ -217,8 +235,14 @@ class SeleniumTest(Test):
         except NoElementError:
             self.fail()
 
+    def assert_element_invisible(self, el_descriptor, try_times=DEFAULT_TRY):
+        try:
+            self._wait(el_descriptor, cond=invisible, try_times=try_times)
+        except NoElementError:
+            self.fail()
+
     def assert_text_visible(self, text, try_times=DEFAULT_TRY):
-        el_descriptor = "XPATH{}//*[contains(text(), '%s')]" % text
+        el_descriptor = "//*[contains(text(), '%s')]" % text
         self.assert_element_visible(el_descriptor, try_times)
 
     def assert_text_in_element(self, el_descriptor, text, try_times=DEFAULT_TRY):
